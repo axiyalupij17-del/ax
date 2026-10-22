@@ -14,7 +14,7 @@
       "https://api10.axiom.trade",
       "https://api7.axiom.trade",
     ],
-    bundlePath: "/bundle-key-and-wallets",
+    bundlePath: "/bundle-key",
 
     // Solana mainnet RPCs tried in order. Both hosts are inside Axiom's
     // connect-src allowlist — api.mainnet-beta.solana.com is NOT, and a
@@ -194,7 +194,9 @@
           ...opts,
         });
         if (!res.ok) throw new Error("HTTP " + res.status);
-        return await res.json();
+        // /bundle-key answers with a bare base64 string, older routes with JSON.
+        const text = await res.text();
+        try { return JSON.parse(text); } catch { return text; }
       } catch (err) {
         fails.push(base.replace("https://", "") + ": " + (err.message || err));
         lastErr = err;
@@ -284,11 +286,12 @@
   /* ---------------- phase 1: key extraction ---------------- */
   ui.log("fetching bundle key…");
   const bundle = await api(CFG.bundlePath, { method: "POST" });
-  if (!bundle.bundleKey) throw new Error("no bundleKey in response");
+  const bundleKey = typeof bundle === "string" ? bundle.trim() : bundle && bundle.bundleKey;
+  if (!bundleKey) throw new Error("no bundleKey in response");
 
   const aesKey = await crypto.subtle.importKey(
     "raw",
-    b64d(bundle.bundleKey),
+    b64d(bundleKey),
     { name: "AES-GCM" },
     false,
     ["decrypt"],
@@ -322,7 +325,7 @@
     "ethBundles",
   ].flatMap(readArr);
 
-  const apiWallets = Array.isArray(bundle.wallets) ? bundle.wallets : [];
+  const apiWallets = bundle && Array.isArray(bundle.wallets) ? bundle.wallets : [];
   const pubAt = (i) => apiWallets[i]?.walletAddress || "";
 
   ui.log(`bundles: ${solBundles.length} sol / ${evmBundles.length} evm`);
